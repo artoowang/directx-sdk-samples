@@ -714,5 +714,5 @@ void Render()
     //
     // Present our back buffer to our front buffer
     //
-    g_pSwapChain->Present( 0, 0 );
+    g_pSwapChain->Present(1, 0);
 }
