@@ -20,6 +20,11 @@
 #include "DDSTextureLoader.h"
 #include "resource.h"
 
+#include <cstdio>
+#include <openvr.h>
+
+#define USE_OPENVR
+
 using namespace DirectX;
 
 //--------------------------------------------------------------------------------------
@@ -79,6 +84,9 @@ XMMATRIX                            g_View;
 XMMATRIX                            g_Projection;
 XMFLOAT4                            g_vMeshColor( 0.7f, 0.7f, 0.7f, 1.0f );
 
+// OpenVR.
+vr::IVRSystem *openvr_system_ = nullptr;
+
 
 //--------------------------------------------------------------------------------------
 // Forward declarations
@@ -89,6 +97,27 @@ void CleanupDevice();
 LRESULT CALLBACK    WndProc( HWND, UINT, WPARAM, LPARAM );
 void Render();
 
+//--------------------------------------------------------------------------------------
+// Utility functions.
+//--------------------------------------------------------------------------------------
+void ShowMessageBox(const char* fmt, ...) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    MessageBoxA(nullptr, buffer, "Message", MB_OK);
+}
+
+void ShowMessageBoxAndExit(const char* fmt, ...) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    MessageBoxA(nullptr, buffer, "Message", MB_OK);
+    exit(-1);
+}
 
 //--------------------------------------------------------------------------------------
 // Entry point to the program. Initializes everything and goes into a message processing 
@@ -589,6 +618,20 @@ HRESULT InitDevice()
     cbChangesOnResize.mProjection = XMMatrixTranspose( g_Projection );
     g_pImmediateContext->UpdateSubresource( g_pCBChangeOnResize, 0, nullptr, &cbChangesOnResize, 0, 0 );
 
+#ifdef USE_OPENVR
+    // OpenVR.
+    // Loading the SteamVR Runtime
+	  vr::EVRInitError eError = vr::VRInitError_None;
+	  openvr_system_ = vr::VR_Init(&eError, vr::VRApplication_Scene);
+	  if (eError != vr::VRInitError_None) {
+		    openvr_system_ = nullptr;
+        ShowMessageBoxAndExit("Unable to init VR runtime: %s", vr::VR_GetVRInitErrorAsEnglishDescription(eError));
+	  }
+    if (!vr::VRCompositor()) {
+        ShowMessageBoxAndExit("Failed to obtain compositor.");
+    }
+#endif
+
     return S_OK;
 }
 
@@ -619,6 +662,14 @@ void CleanupDevice()
     if( g_pImmediateContext ) g_pImmediateContext->Release();
     if( g_pd3dDevice1 ) g_pd3dDevice1->Release();
     if( g_pd3dDevice ) g_pd3dDevice->Release();
+
+#ifdef USE_OPENVR
+    // OpenVR.
+    if (openvr_system_) {
+        vr::VR_Shutdown();
+        openvr_system_ = nullptr;
+    }
+#endif
 }
 
 
@@ -657,6 +708,11 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 //--------------------------------------------------------------------------------------
 void Render()
 {
+#ifdef USE_OPENVR
+    vr::TrackedDevicePose_t dev_poses[vr::k_unMaxTrackedDeviceCount];
+    vr::VRCompositor()->WaitGetPoses(dev_poses, vr::k_unMaxTrackedDeviceCount, NULL, 0);
+#endif
+
     // Update our time
     static float t = 0.0f;
     if( g_driverType == D3D_DRIVER_TYPE_REFERENCE )
@@ -711,8 +767,23 @@ void Render()
     g_pImmediateContext->PSSetSamplers( 0, 1, &g_pSamplerLinear );
     g_pImmediateContext->DrawIndexed( 36, 0, 0 );
 
+#ifdef USE_OPENVR
+    // Submit to OpenVR.
+    // TODO: is it inefficient to do this for every frame?
+    ID3D11Texture2D* back_buffer = nullptr;
+    HRESULT hr = g_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+        reinterpret_cast<void**>(&back_buffer));
+    if (FAILED(hr))
+        ShowMessageBoxAndExit("Failed to obtain back buffer.");
+    vr::Texture_t left_eye_texture = {
+        (void*)back_buffer, vr::API_DirectX, vr::ColorSpace_Gamma
+    };
+    vr::VRCompositor()->Submit(vr::Eye_Left, &left_eye_texture);
+    back_buffer->Release();
+#endif
+
     //
     // Present our back buffer to our front buffer
     //
-    g_pSwapChain->Present(1, 0);
+    g_pSwapChain->Present(0, 0);
 }
