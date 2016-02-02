@@ -22,6 +22,9 @@
 
 #include <cstdio>
 #include <openvr.h>
+#include <string>
+
+#include "nvToolsExt.h"
 
 #define USE_OPENVR
 
@@ -118,6 +121,56 @@ void ShowMessageBoxAndExit(const char* fmt, ...) {
     MessageBoxA(nullptr, buffer, "Message", MB_OK);
     exit(-1);
 }
+
+double GetTimestampInSeconds() {
+  LARGE_INTEGER li_freq;
+  QueryPerformanceFrequency(&li_freq);
+  LARGE_INTEGER pc;
+  QueryPerformanceCounter(&pc);
+  return static_cast<double>(pc.QuadPart) / li_freq.QuadPart;
+}
+
+void SleepNMilliseconds(double n) {
+  const double start = GetTimestampInSeconds();
+  while (GetTimestampInSeconds() - start < n * 0.001);
+}
+
+int NvtxRangePushColored(const char *msg, uint32_t color) {
+  nvtxEventAttributes_t eventAttrib = { 0 };
+  eventAttrib.version = NVTX_VERSION;
+  eventAttrib.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
+  eventAttrib.colorType = NVTX_COLOR_ARGB;
+  eventAttrib.color = color;
+  eventAttrib.messageType = NVTX_MESSAGE_TYPE_ASCII;
+  eventAttrib.message.ascii = msg;
+  return ::nvtxRangePushEx(&eventAttrib);
+}
+
+void NvtxRangePop() {
+  ::nvtxRangePop();
+}
+
+static const double kAppStartTimeInSeconds = GetTimestampInSeconds();
+
+class ScopedTimer {
+ public:
+  ScopedTimer(std::string& buffer, const char* name)
+    : start_time_(GetTimestampInSeconds()), buffer_(buffer), name_(name) {
+    NvtxRangePushColored(name, 0xFFcccc00);
+  }
+  ~ScopedTimer() {
+    const double now = GetTimestampInSeconds();
+    const double duration_in_ms = (now - start_time_) * 1000.0;
+    const double timestamp_in_ms = (now - kAppStartTimeInSeconds) * 1000.0;
+    buffer_ += std::to_string(timestamp_in_ms) + ", " + std::to_string(duration_in_ms) + "\n";
+    NvtxRangePop();
+  }
+
+ private:
+  double start_time_;
+  std::string& buffer_;
+  std::string name_;
+};
 
 //--------------------------------------------------------------------------------------
 // Entry point to the program. Initializes everything and goes into a message processing 
