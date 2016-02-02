@@ -90,6 +90,10 @@ XMFLOAT4                            g_vMeshColor( 0.7f, 0.7f, 0.7f, 1.0f );
 // OpenVR.
 vr::IVRSystem *openvr_system_ = nullptr;
 
+// Debug.
+std::string submit0_buffer_;
+std::string submit1_buffer_;
+std::string present_buffer_;
 
 //--------------------------------------------------------------------------------------
 // Forward declarations
@@ -204,6 +208,18 @@ int WINAPI wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
             Render();
         }
     }
+
+    // Print trace messages.
+    FILE* fp;
+    fopen_s(&fp, "submit0.csv", "w");
+    fprintf(fp, "%s", submit0_buffer_.c_str());
+    fclose(fp);
+    fopen_s(&fp, "submit1.csv", "w");
+    fprintf(fp, "%s", submit1_buffer_.c_str());
+    fclose(fp);
+    fopen_s(&fp, "present.csv", "w");
+    fprintf(fp, "%s", present_buffer_.c_str());
+    fclose(fp);
 
     CleanupDevice();
 
@@ -831,7 +847,10 @@ void Render()
     vr::Texture_t left_eye_texture = {
         (void*)back_buffer, vr::API_DirectX, vr::ColorSpace_Gamma
     };
-    vr::VRCompositor()->Submit(vr::Eye_Left, &left_eye_texture);
+    {
+        ScopedTimer timer(submit0_buffer_, "Submit0");
+        vr::VRCompositor()->Submit(vr::Eye_Left, &left_eye_texture);
+    }
     back_buffer->Release();
 #endif
 
